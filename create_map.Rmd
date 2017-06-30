@@ -1,0 +1,93 @@
+---
+title: "TIP Tiers 2017"
+author: "Andrew Heiss"
+date: "2017-06-29"
+output: 
+  html_document: 
+    code_folding: hide
+    highlight: pygments
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-packages-data, message=FALSE}
+library(tidyverse)
+library(forcats)
+library(viridis)
+library(countrycode)
+library(rgdal)
+library(Cairo)
+
+# Download Natural Earth shapefiles if needed
+map.url <- paste0("http://www.naturalearthdata.com/", 
+                  "http//www.naturalearthdata.com/download/110m/cultural/", 
+                  "ne_110m_admin_0_countries.zip")
+
+map.path <- file.path("data")
+map.zip.name <- basename(map.url)
+map.name <- tools::file_path_sans_ext(map.zip.name)
+
+if (!file.exists(file.path(map.path, paste0(map.name, ".shp")))) {
+  download.file(url = map.url, file.path(map.path, map.zip.name), "auto")
+  unzip(file.path(map.path, map.zip.name), exdir = map.path)
+  file.remove(file.path(map.path, map.zip.name))
+}
+
+# Transform to Robinson projection because it's the best evarrrr
+countries.map <- readOGR(map.path, map.name, verbose = FALSE)
+countries.robinson <- spTransform(countries.map, CRS("+proj=robin"))
+countries.ggmap <- ggplot2::fortify(countries.robinson, region="iso_a3") %>%
+  filter(!(id %in% c("ATA", -99))) %>%  # Get rid of Antarctica and NAs
+  mutate(id = ifelse(id == "GRL", "DNK", id))  # Greenland is part of Denmark
+
+# TIP tier ratings manually copied/pasted from the State Department's website
+# https://www.state.gov/j/tip/rls/tiprpt/2017/271117.htm
+tiers <- read_csv("data/tiers_2017.csv") %>%
+  mutate(iso3 = countrycode(country, "country.name", "iso3c",
+                            custom_match = c("Kosovo" = "XKK"))) %>%
+  mutate(tier = paste0(tier, "   ")) %>%  # Add some horizontal space in the legend
+  mutate(tier = fct_inorder(tier, ordered = TRUE))
+
+# Join tier data with countries in the map
+countries.to.plot <- countries.ggmap %>% 
+  distinct(id) %>%
+  left_join(tiers, by = c("id" = "iso3"))
+```
+
+Tier rankings come from the [2017 TIP Report](https://www.state.gov/j/tip/rls/tiprpt/2017/271117.htm).
+
+```{r generate-map, fig.width=8, fig.height=4.5}
+# Basic blank theme for the map
+theme_map <- function(base_size=12, base_family="Source Sans Pro") {
+  ret <- theme_bw(base_size, base_family) + 
+    theme(panel.background = element_rect(fill="#ffffff", colour=NA),
+          panel.border=element_blank(), axis.line=element_blank(),
+          panel.grid=element_blank(), axis.ticks=element_blank(),
+          axis.title=element_blank(), axis.text=element_blank())
+  ret
+}
+
+# Plot the map with viridis colors because they're the best evarrrr
+plot.tiers <- ggplot(countries.to.plot) +
+  geom_map(aes(map_id = id, fill = tier), map = countries.ggmap, colour = "black", size = 0.1) +
+  expand_limits(x = countries.ggmap$long, y = countries.ggmap$lat) +
+  coord_equal() +
+  scale_fill_viridis(breaks = levels(tiers$tier), option = "viridis",
+                     discrete = TRUE, na.value = "grey80") +
+  guides(fill = guide_legend(title = NULL)) +
+  theme_map() + theme(legend.position = "bottom",
+                      legend.key.size = unit(0.65, "lines"))
+plot.tiers
+
+# Save the plot with Cairo so fonts embed in the PDF and so the PNG uses the right resolution
+width <- 8
+height <- 4.5
+
+ggsave(plot.tiers, filename="output/tiers_2017.pdf",
+       width=width, height=height, units="in", device=cairo_pdf)
+ggsave(plot.tiers, filename="output/tiers_2017.png",
+       width=width, height=height, units="in", type="cairo", dpi=300)
+```
