@@ -4,4 +4,6 @@
 
 Map the tier rankings from the [2017 TIP Report](https://www.state.gov/j/tip/rls/tiprpt/2017/271117.htm). That's it.
 
+The [`output/`](https://github.com/andrewheiss/tip_tiers_2017/tree/master/output) folder has high resolution PNG and PDF versions of the map.
+
 ![Map of 2017 TIP Tiers](output/tiers_2017.png)
